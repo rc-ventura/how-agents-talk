@@ -2,7 +2,7 @@
 
 > A practical demonstration of **Agent-to-Agent (A2A)** and **Model Context Protocol (MCP)** working together to resolve a production incident — implemented across four different AI frameworks.
 
-![Architecture](image/README/1776208611270.png)
+![Architecture](assets/1776208611270.png)
 
 ---
 
