@@ -17,11 +17,14 @@ Run with real adapters:
 
 
 import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[2]))
 
 from mcp import FastMCP
 from deps import resolve_metrics, resolve_logs, resolve_deployments, resolve_notifications
-
-AGENT_CARDS: dict = {}
+from problem.mocks.data import AGENT_CARDS
 
 # ===== Instances =============================
 
@@ -105,16 +108,11 @@ def execute_rollback(service: str, deploy_id: str) -> dict:
     return _deployments.execute_rollback(service, deploy_id)
 
 @mcp.tool()
-def notify_team(message: str, priority: str = "normal") -> dict:
-    """Notify the incident response team."""
-    return _notifications.send(message, priority)
-
-@mcp.tool()
 def notify_team(
     service: str,
     message: str,
     severity: str = "high",
-    channel: str = "slack"
+    channel: str = "team"
 ) -> dict:
     """
     Send an incident notification to the appropriate team or escalation channel.
