@@ -1,0 +1,29 @@
+{
+  "name": "Triage Agent",
+  "description": "Classifies incidents by severity and category, identifies suspected cause, and recommends next steps.",
+  "url": "http://localhost:8002",
+  "version": "1.0.0",
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"],
+  "capabilities": {
+    "streaming": true
+  },
+  "additionalInterfaces": [
+    {
+      "transport": "JSONRPC",
+      "url": "http://localhost:8002"
+    }
+  ],
+  "skills": [
+    {
+      "id": "triage_incident",
+      "name": "triage_incident",
+      "description": "Analyse a service alert using metrics, logs, and deployment data. Produces a structured triage result with priority, category, suspected cause, and recommended next step.",
+      "tags": ["incident", "triage", "classification", "priority"],
+      "examples": [
+        "Triage this alert: payments-service 34% error rate, deploy #4821",
+        "Classify and prioritise: payments-service is returning 500 errors since 02:51 UTC"
+      ]
+    }
+  ]
+}
