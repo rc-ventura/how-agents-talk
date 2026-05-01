@@ -69,11 +69,16 @@ how-agents-talk/
 │   │           ├── logs.py
 │   │           ├── deployments.py
 │   │           └── notifications.py
-│   └── problem/                    # shared scenario: contracts + mock data
-│       ├── contracts/
-│       │   └── models.py           # Pydantic models (Alert, TriageResult, …)
-│       └── mocks/
-│           └── data.py             # in-memory mock state
+│   ├── problem/                    # shared scenario: contracts + mock data
+│   │   ├── contracts/
+│   │   │   └── models.py           # Pydantic models (Alert, TriageResult, …)
+│   │   └── mocks/
+│   │       └── data.py             # in-memory mock state
+│   ├── triage-agent/               # LangGraph + a2a-sdk
+│   ├── investigation-agent/        # Google ADK (native A2A)
+│   ├── remediation-agent/          # OpenAI SDK + a2a-sdk
+│   ├── communication-agent/        # CrewAI + a2a-sdk
+│   └── orchestrator/               # LangGraph + LangGraph Studio
 │
 └── beeai/                          # 📋 planned — BeeAI + Ollama local
 ```
@@ -85,9 +90,15 @@ how-agents-talk/
 ### Run with mocks (no credentials)
 
 ```bash
-# Start the MCP server
+# 1. Start the MCP server
 cd a2a/mcp-server
+uv sync
 fastmcp run server.py --transport http --port 8000
+
+# 2. Start the Triage Agent
+cd a2a/triage-agent
+uv sync
+OPENAI_API_KEY=... uv run python server.py
 ```
 
 ### Run with real integrations
@@ -100,6 +111,27 @@ DD_API_KEY=... DD_APP_KEY=... \
 PD_API_KEY=... PD_SERVICE_ID=... \
 fastmcp run a2a/mcp-server/server.py --transport http --port 8000
 ```
+
+### Observability (LangSmith + Lang Studio)
+
+```bash
+# 1. Copy .env.example and fill in your keys
+cp .env.example .env
+
+# 2. Edit .env with:
+#    OPENAI_API_KEY=sk-...
+#    LANGSMITH_API_KEY=ls-...
+#    LANGSMITH_PROJECT=how-agents-talk
+#    LANGSMITH_TRACING=true
+
+# 3. Start with env vars loaded
+set -a && source .env && set +a
+uv run python a2a/triage-agent/server.py
+```
+
+With `LANGSMITH_TRACING=true`, every agent invocation is traced in
+[LangSmith](https://smith.langchain.com). Use **Lang Studio** (`langgraph dev`)
+for interactive graph debugging — requires the LangGraph CLI (install via `pip install langgraph-cli`).
 
 ---
 
@@ -131,6 +163,23 @@ NOTIFICATIONS_ADAPTER=pagerduty → a2a/mcp-server/adapters/pagerduty/notificati
 
 ---
 
+## How each framework implements A2A
+ 
+A2A is an open protocol — any framework can implement it. This repo shows five different integration approaches side by side:
+ 
+| Framework | A2A pattern | Boilerplate |
+|---|---|---|
+| **LangGraph + a2a-sdk** | Manual `AgentExecutor` + `A2AStarletteApplication` | High — protocol visible in code |
+| **OpenAI SDK + a2a-sdk** | Same pattern as LangGraph | High |
+| **CrewAI + a2a-sdk** | Same pattern as LangGraph | High |
+| **Google ADK** | `to_a2a(agent)` — one line, AgentCard auto-generated | Low |
+| **BeeAI** | `A2AServer(...).register(agent).run()` — framework abstracts everything | Low |
+| **LangGraph + LangSmith** | Deploy via `langgraph dev` or LangSmith Platform — A2A at `/a2a/{assistant_id}`, AgentCard automatic | Zero (platform-managed) |
+ 
+The `a2a/` variant deliberately uses the low-level `a2a-sdk` for LangGraph, OpenAI SDK, and CrewAI — keeping the protocol visible for learning. The `beeai/` variant shows the high-abstraction end of the spectrum.
+
+---
+
 ## Frameworks Used
 
 | Agent | Framework | Why | Status |
@@ -146,7 +195,9 @@ NOTIFICATIONS_ADAPTER=pagerduty → a2a/mcp-server/adapters/pagerduty/notificati
 
 ## References
 
-- [A2A Protocol](https://google.github.io/A2A/)
+- [A2A Protocol](https://a2a-protocol.org/latest/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
-- [FastMCP](https://github.com/jlowin/fastmcp)
-- [Architecting Agentic MLOps — A2A + MCP](https://www.infoq.com/) — InfoQ, Feb 2026
+- [FastMCP](https://gofastmcp.com)
+- [a2a-sdk Python](https://github.com/a2aproject/a2a-python)
+- [Architecting Agentic MLOps — A2A + MCP](https://www.infoq.com/articles/architecting-agentic-mlops-a2a-mcp/) — InfoQ, Feb 2026
+ 

@@ -1,5 +1,11 @@
 from google.protobuf import json_format
-from a2a.types import AgentCard, AgentCapabilities, AgentInterface, AgentSkill
+from a2a.types import (
+    AgentCard,
+    AgentCapabilities,
+    AgentInterface,
+    AgentProvider,
+    AgentSkill,
+)
 
 
 def build_agent_card() -> AgentCard:
@@ -9,15 +15,23 @@ def build_agent_card() -> AgentCard:
             "Classifies incidents by severity and category, identifies suspected cause, "
             "and recommends next steps."
         ),
-        icon_url='http://localhost:8002/',
+        provider=AgentProvider(
+            organization="how-agents-talk",
+            url="https://example.com",
+        ),
+        icon_url="http://localhost:8002/",
         version="1.0.0",
         default_input_modes=["text"],
         default_output_modes=["text"],
-        capabilities=AgentCapabilities(streaming=True),
+        capabilities=AgentCapabilities(
+            streaming=True,
+            push_notifications=False,
+        ),
         supported_interfaces=[
             AgentInterface(
                 url="http://localhost:8002",
                 protocol_binding="JSONRPC",
+                protocol_version="1.0",
             )
         ],
         skills=[
@@ -34,6 +48,8 @@ def build_agent_card() -> AgentCard:
                     "Triage this alert: payments-service 34% error rate, deploy #4821",
                     "Classify and prioritise: payments-service is returning 500 errors since 02:51 UTC",
                 ],
+                input_modes=["text"],
+                output_modes=["text"],
             )
         ],
     )

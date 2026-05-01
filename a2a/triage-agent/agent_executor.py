@@ -1,8 +1,8 @@
 """
 TriageAgentExecutor — bridge between A2A protocol and the Triage Agent.
 
-Uses the low-level EventQueue API directly (no TaskUpdater wrapper) so
-the protocol flow is explicit and visible — educational by design.
+Uses the EventQueue API directly with TaskUpdater wrapper so
+the protocol flow is explicit and visible
 
 The three A2A events used here:
 
@@ -23,11 +23,10 @@ from a2a.types import (
     InvalidParamsError,
     Part,
     TaskState,
-    TextPart,
     UnsupportedOperationError,
+    a2a_pb2,
 )
-from a2a.utils import new_agent_text_message, new_task
-from a2a.utils.errors import ServerError
+from a2a.utils.errors import A2AError
 
 from agent import TriageAgent
 
@@ -52,14 +51,19 @@ class TriageAgentExecutor(AgentExecutor):
         event_queue: EventQueue,
     ) -> None:
         if self._validate_request(context):
-            raise ServerError(error=InvalidParamsError())
+            raise A2AError(error=InvalidParamsError())
 
         query = context.get_user_input()
 
         # ── 1. Create or recover the task ─────────────────────────────────
         task = context.current_task
         if not task:
-            task = new_task(context.message)
+            # Create task using protobuf directly (new_task was removed in 1.0.2)
+            task = a2a_pb2.Task(
+                id=context.task_id or context.message.task_id,
+                context_id=context.context_id,
+                status=a2a_pb2.TaskStatus(state=TaskState.TASK_STATE_SUBMITTED),
+            )
             # Publish the Task object so the server can persist it.
             await event_queue.enqueue_event(task)
         task_id = task.id
@@ -78,25 +82,18 @@ class TriageAgentExecutor(AgentExecutor):
 
                 if not is_complete and not needs_input:
                     # ── 2a. Intermediate update: agent is working ──────────
+                    message = updater.new_agent_message([Part(text=content)])
                     await updater.update_status(
-                        TaskState.working,
-                        new_agent_text_message(
-                            content,
-                            context_id,
-                            task_id,
-                        ),
+                        TaskState.TASK_STATE_WORKING,
+                        message,
                     )
 
                 elif needs_input:
                     # ── 2b. Agent needs clarification from the user ────────
+                    message = updater.new_agent_message([Part(text=content)])
                     await updater.update_status(
-                        TaskState.input_required,
-                        new_agent_text_message(
-                            content,
-                            context_id,
-                            task_id,
-                        ),
-                        final=True,
+                        TaskState.TASK_STATE_INPUT_REQUIRED,
+                        message,
                     )
                     break
 
@@ -105,7 +102,7 @@ class TriageAgentExecutor(AgentExecutor):
                     logger.info("Triage complete: %s", content[:120])
 
                     await updater.add_artifact(
-                        [Part(root=TextPart(text=content))],
+                        [Part(text=content)],
                         name="triage-result",
                         last_chunk=True,
                     )
@@ -116,7 +113,7 @@ class TriageAgentExecutor(AgentExecutor):
         except Exception as e:
             logger.exception("Triage Agent failed: %s", e)
             await updater.failed()
-            raise ServerError(error=InternalError()) from e
+            raise A2AError(error=InternalError()) from e
 
     
     
@@ -149,4 +146,4 @@ class TriageAgentExecutor(AgentExecutor):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
-        raise ServerError(error=UnsupportedOperationError())
+        raise A2AError(error=UnsupportedOperationError())

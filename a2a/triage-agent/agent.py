@@ -21,8 +21,10 @@ It produces a structured triage result with the following fields:
 
 import json
 import os
+import asyncio
+
 from collections.abc import AsyncIterable
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal 
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, ToolMessage
@@ -31,7 +33,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
 
-MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8000/mcp")
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8001/mcp")
 
 SYSTEM_PROMPT = """You are the Triage Agent for an incident response system.
 
@@ -67,13 +69,19 @@ class TriageAgent:
     """LangChain v1 agent wrapped around MCP tools.
 
     The compiled graph is built once (lazy) and reused across calls.
-    ToolStrategy enforces the TriageResult schema — no prompt-only JSON.
+    ProviderStrategy (auto-selected for OpenAI) enforces the TriageResult
+    schema via native structured output — no prompt-only JSON.
     MemorySaver keeps message history per context_id (thread).
 
     Exposes a stream() async generator so the executor can yield
     intermediate A2A status events while the agent is working.
+
+    The MCP client and tools are cached as class variables so every
+    instance (and the whole process) reuses a single connection.
     """
 
+    _mcp_client: ClassVar[MultiServerMCPClient | None] = None
+    _tools_cache: ClassVar[list | None] = None
 
     def __init__(self) -> None:
         self.model = ChatOpenAI(
@@ -82,24 +90,38 @@ class TriageAgent:
         )
         self._memory = MemorySaver()
         self._agent = None
+        self._lock = asyncio.Lock()
 
     async def _get_agent(self):
-        """Lazy-init: fetch MCP tools and compile the graph once."""
-        if self._agent is None:
-            client = MultiServerMCPClient(
-                {
-                    "incident-response": {
-                        "transport": "http",
-                        "url": MCP_SERVER_URL,
+        """Lazy-init: fetch MCP tools and compile the graph once (thread-safe).
+
+        The MultiServerMCPClient and the tool list are cached at class
+        level so all instances share the same connection.
+        """
+        if self._agent is not None:
+            return self._agent
+
+        async with self._lock:
+            if self._agent is not None:
+                return self._agent
+
+            if TriageAgent._mcp_client is None:
+                TriageAgent._mcp_client = MultiServerMCPClient(
+                    {
+                        "incident-response": {
+                            "transport": "streamable-http",
+                            "url": MCP_SERVER_URL,
+                        }
                     }
-                }
-            )
-            all_tools = await client.get_tools()
-            tools = [t for t in all_tools if t.name in TRIAGE_TOOLS]
+                )
+                all_tools = await TriageAgent._mcp_client.get_tools()
+                TriageAgent._tools_cache = [
+                    t for t in all_tools if t.name in TRIAGE_TOOLS
+                ]
 
             self._agent = create_agent(
                 self.model,
-                tools=tools,
+                tools=TriageAgent._tools_cache,
                 system_prompt=SYSTEM_PROMPT,
                 checkpointer=self._memory,
                 response_format=TriageResult,

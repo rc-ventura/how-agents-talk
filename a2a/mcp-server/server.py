@@ -6,13 +6,13 @@ As tools delegate to adapters resolved in deps.py.
 Switch from mock to Datadog/PagerDuty: just change env vars, no need to touch here.
  
 Run with mocks (default):
-    fastmcp run server.py --transport http --port 8000
+    fastmcp run server.py --transport http --port 8001
  
 Run with real adapters:
     METRICS_ADAPTER=datadog LOGS_ADAPTER=datadog \\
     NOTIFICATIONS_ADAPTER=pagerduty \\
     DD_API_KEY=... DD_APP_KEY=... PD_API_KEY=... PD_SERVICE_ID=... PD_FROM_EMAIL=... \\
-    fastmcp run server.py --transport http --port 8000
+    fastmcp run server.py --transport http --port 8001
 """
 
 
@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
-from mcp import FastMCP
+from mcp.server import FastMCP
 from deps import resolve_metrics, resolve_logs, resolve_deployments, resolve_notifications
 from problem.mocks.data import AGENT_CARDS
 
@@ -30,6 +30,7 @@ from problem.mocks.data import AGENT_CARDS
 
 mcp = FastMCP(
     "incident-response-mcp",
+    port=8001,
     instructions=(
         "MCP server for incident response operations. "
         "Use query_metrics / get_error_rate to check service health,"
@@ -175,4 +176,4 @@ def get_agent_card(agent_name: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="http")
+    mcp.run(transport="streamable-http")
