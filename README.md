@@ -12,7 +12,7 @@ A **payments-service** fires a 34% error rate alert. An orchestrator receives it
 
 | Variant | Approach | LLM | Status |
 |---|---|---|---|
-| `a2a/` | Cross-framework via A2A SDK | OpenAI / Anthropic / Gemini | 🚧 In progress |
+| `a2a/` | Cross-framework via A2A SDK + MCP | OpenAI | � Working |
 | `beeai/` | BeeAI + Ollama | Local (Granite, Llama, etc.) | 📋 Planned |
 
 ---
@@ -90,16 +90,18 @@ how-agents-talk/
 ### Run with mocks (no credentials)
 
 ```bash
-# 1. Start the MCP server
+# 1. Start the MCP server (streamable-http on port 8001)
 cd a2a/mcp-server
-uv sync
-fastmcp run server.py --transport http --port 8000
+uv run python server.py
 
-# 2. Start the Triage Agent
+# 2. Start the Triage Agent (A2A server on port 8002)
 cd a2a/triage-agent
-uv sync
 OPENAI_API_KEY=... uv run python server.py
 ```
+
+MCP Server logs (streamable-http on port 8001):
+
+![MCP Server Logs](assets/Screenshot%202026-05-01%20at%2012.05.43%E2%80%AFPM.png)
 
 ### Run with real integrations
 
@@ -130,8 +132,7 @@ uv run python a2a/triage-agent/server.py
 ```
 
 With `LANGSMITH_TRACING=true`, every agent invocation is traced in
-[LangSmith](https://smith.langchain.com). Use **Lang Studio** (`langgraph dev`)
-for interactive graph debugging — requires the LangGraph CLI (install via `pip install langgraph-cli`).
+[LangSmith](https://smith.langchain.com).
 
 ---
 
@@ -163,6 +164,74 @@ NOTIFICATIONS_ADAPTER=pagerduty → a2a/mcp-server/adapters/pagerduty/notificati
 
 ---
 
+## Testing
+
+### Direct MCP + Triage Agent (no A2A protocol)
+
+Test the Triage Agent connecting directly to the MCP server, bypassing A2A:
+
+```bash
+# Terminal 1 — MCP Server (must be running)
+cd a2a/mcp-server
+uv run python server.py
+
+# Terminal 2 — Run test
+cd a2a/mcp-server/tests
+export OPENAI_API_KEY=...
+uv run python test_mcp_direct.py
+```
+
+This script (`test_mcp_direct.py`):
+- Instantiates `TriageAgent` directly
+- Connects to MCP via `MultiServerMCPClient` using `streamable-http` transport
+- Streams tool calls and structured `TriageResult`
+
+Output shows:
+- `[tool_call]` — name and arguments of each MCP tool invoked
+- `[tool_result]` — raw return from the tool (mock data)
+- Final JSON — structured `TriageResult` (priority, category, suspected_cause, etc.)
+
+![Direct MCP Test Output](assets/Screenshot%202026-05-01%20at%2012.03.34%E2%80%AFPM.png)
+
+### Triage Graph Smoke Test (no MCP server needed)
+
+Test the LangGraph triage graph in isolation with mock tools:
+
+```bash
+cd a2a/triage-agent/tests
+uv run python smoke_test.py "payments-service 34% error rate"
+```
+
+Uses `triage_graph` from `studio/graph.py` with singleton mock adapters.
+
+![Smoke Test Output](assets/Screenshot%202026-05-01%20at%2012.02.52%E2%80%AFPM.png)
+
+---
+
+## LangGraph Studio
+
+The Triage Agent graph is configured for LangGraph Studio via `langgraph.json`:
+
+```json
+{
+  "graphs": {
+    "triage": "./studio/graph.py:triage_graph"
+  },
+  "env": ".env"
+}
+```
+
+Start Studio:
+
+```bash
+cd a2a/triage-agent
+langgraph dev
+```
+
+Studio uses `studio/graph.py` — mock adapters are instantiated as singletons so tool nodes call methods on shared instances rather than re-importing modules.
+
+---
+
 ## How each framework implements A2A
  
 A2A is an open protocol — any framework can implement it. This repo shows five different integration approaches side by side:
@@ -184,8 +253,8 @@ The `a2a/` variant deliberately uses the low-level `a2a-sdk` for LangGraph, Open
 
 | Agent | Framework | Why | Status |
 |---|---|---|---|
-| Orchestrator | LangGraph | Graph-based flow + Studio UI for visualization | 📋 Planned |
-| Triage | LangGraph | State machine for severity classification | 📋 Planned |
+| Orchestrator | LangGraph | Graph-based flow + Studio UI for visualization | � In progress |
+| Triage | LangGraph | State machine for severity classification + MCP tools | � Working |
 | Investigation | Google ADK | Tool-use + structured reasoning | 📋 Planned |
 | Remediation | OpenAI SDK | Direct tool calls, minimal abstraction | 📋 Planned |
 | Communication | CrewAI | Role-based crew for report generation | 📋 Planned |
